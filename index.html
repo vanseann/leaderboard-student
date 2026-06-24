@@ -207,6 +207,7 @@ body{font-family:'Space Grotesk',sans-serif;background:var(--page);color:var(--i
 
 <script>
 const API_URL='https://script.google.com/macros/s/AKfycbz1z4LmxoWH0TIILu24af8fiOpff0wQyxwyRv5LPyFLVLb4kc0GIk-Y8wyExRdBpmKn/exec';
+const SJ_CSV_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vQM5Tf6IhPba3Bcr4rlDWFkZ_CixyF7i41bpDupnP5P3tLdkgiNr8ntBN8aXGhy_BXnWsQOO3FjxRp-/pub?gid=197355243&single=true&output=csv';
 const ID_KEY='waa_lb_id';
 const DATA_KEY='waa_lb_data';
 const DATA_TS_KEY='waa_lb_ts';
@@ -233,6 +234,57 @@ function extractId(raw){
   const s=raw.trim().toUpperCase();
   if(s.includes(' - ')){return s.split(' - ').pop().trim();}
   return s;
+}
+
+// Parser CSV sederhana yang aware terhadap quoted field (field bisa berisi koma/newline di dalam tanda kutip)
+function parseCSV(text){
+  const rows=[];
+  let row=[],field='',inQuotes=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(inQuotes){
+      if(c==='"'){
+        if(text[i+1]==='"'){field+='"';i++;}
+        else{inQuotes=false;}
+      }else{field+=c;}
+    }else{
+      if(c==='"'){inQuotes=true;}
+      else if(c===','){row.push(field);field='';}
+      else if(c==='\n'){row.push(field);rows.push(row);row=[];field='';}
+      else if(c==='\r'){/* skip, ditangani oleh \n */}
+      else{field+=c;}
+    }
+  }
+  if(field.length||row.length){row.push(field);rows.push(row);}
+  if(!rows.length) return [];
+  const headers=rows[0];
+  return rows.slice(1).filter(r=>r.length>1||r[0]).map(r=>{
+    const obj={};
+    headers.forEach((h,i)=>{obj[h]=r[i]!==undefined?r[i]:'';});
+    return obj;
+  });
+}
+
+// Bangun lookup kehadiran: key = kode searching_id compact (mis. AUSELKAMELIEN107) -> pct_kehadiran
+// Sumber CSV Student Journey pakai format "NAMA - KODE", leaderboard pakai KODE compact saja
+async function fetchAttendanceLookup(){
+  const lookup={};
+  try{
+    const resp=await fetch(SJ_CSV_URL+'&_cb='+Date.now(),{cache:'no-store'});
+    if(!resp.ok) return lookup;
+    const text=await resp.text();
+    const rows=parseCSV(text);
+    rows.forEach(r=>{
+      const sid=(r.searching_id||'').trim().toUpperCase();
+      if(!sid) return;
+      const code=sid.includes(' - ')?sid.split(' - ').pop().trim():sid;
+      const pct=parseFloat(r.pct_kehadiran);
+      if(code && !isNaN(pct)) lookup[code]=pct;
+    });
+  }catch(e){
+    console.warn('Gagal memuat data kehadiran:',e.message);
+  }
+  return lookup;
 }
 
 window.onload=function(){
@@ -289,12 +341,17 @@ async function getDataCached(){
     const cached=localStorage.getItem(DATA_KEY);
     if(cached){try{return JSON.parse(cached);}catch(e){}}
   }
-  const resp=await fetch(API_URL);
+  const [resp,attLookup]=await Promise.all([fetch(API_URL),fetchAttendanceLookup()]);
   if(!resp.ok) throw new Error('HTTP '+resp.status);
   const text=await resp.text();
   const json=JSON.parse(text);
   if(json.error) throw new Error(json.error);
   const arr=Array.isArray(json)?json:[];
+  // Join kehadiran via searching_id (kode compact, sama persis dgn key leaderboard)
+  arr.forEach(r=>{
+    const sid=(r.searching_id||'').trim().toUpperCase();
+    if(sid && attLookup[sid]!==undefined) r.avg_hadir=attLookup[sid];
+  });
   try{
     localStorage.setItem(DATA_KEY,JSON.stringify(arr));
     localStorage.setItem(DATA_TS_KEY,String(Date.now()));
