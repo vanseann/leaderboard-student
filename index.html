@@ -271,18 +271,23 @@ async function fetchAttendanceLookup(){
   const lookup={};
   try{
     const resp=await fetch(SJ_CSV_URL+'&_cb='+Date.now(),{cache:'no-store'});
+    console.log('[debug-kehadiran] fetch status:',resp.status,resp.ok);
     if(!resp.ok) return lookup;
     const text=await resp.text();
+    console.log('[debug-kehadiran] CSV length:',text.length,'| preview:',text.slice(0,200));
     const rows=parseCSV(text);
+    console.log('[debug-kehadiran] rows parsed:',rows.length,'| sample row:',rows[0]);
+    let matched=0;
     rows.forEach(r=>{
       const sid=(r.searching_id||'').trim().toUpperCase();
       if(!sid) return;
       const code=sid.includes(' - ')?sid.split(' - ').pop().trim():sid;
       const pct=parseFloat(r.pct_kehadiran);
-      if(code && !isNaN(pct)) lookup[code]=pct;
+      if(code && !isNaN(pct)){lookup[code]=pct;matched++;}
     });
+    console.log('[debug-kehadiran] total entries in lookup:',matched,'| sample keys:',Object.keys(lookup).slice(0,5));
   }catch(e){
-    console.warn('Gagal memuat data kehadiran:',e.message);
+    console.warn('[debug-kehadiran] Gagal memuat data kehadiran:',e.message,e);
   }
   return lookup;
 }
@@ -347,11 +352,14 @@ async function getDataCached(){
   const json=JSON.parse(text);
   if(json.error) throw new Error(json.error);
   const arr=Array.isArray(json)?json:[];
+  console.log('[debug-kehadiran] total leaderboard rows:',arr.length,'| sample searching_id dari leaderboard:',arr.slice(0,5).map(r=>r.searching_id));
   // Join kehadiran via searching_id (kode compact, sama persis dgn key leaderboard)
+  let joined=0;
   arr.forEach(r=>{
     const sid=(r.searching_id||'').trim().toUpperCase();
-    if(sid && attLookup[sid]!==undefined) r.avg_hadir=attLookup[sid];
+    if(sid && attLookup[sid]!==undefined){r.avg_hadir=attLookup[sid];joined++;}
   });
+  console.log('[debug-kehadiran] berhasil join:',joined,'dari',arr.length,'student');
   try{
     localStorage.setItem(DATA_KEY,JSON.stringify(arr));
     localStorage.setItem(DATA_TS_KEY,String(Date.now()));
