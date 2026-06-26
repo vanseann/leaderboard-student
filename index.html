@@ -242,8 +242,8 @@ const EXAM_DEFS={
 };
 const AVG_F={mid_a1:'avg_mid_a1',final_a1:'avg_final_a1',mid_a2:'avg_mid_a2',final_a2:'avg_final_a2',mid_b1:'avg_mid_b1',final_b1:'avg_final_b1',mid_n4:'avg_mid_n4',final_n4:'avg_final_n4',mid_n5:'avg_mid_n5',final_n5:'avg_final_n5'};
 
-// Urutan progress job apply (semakin besar = semakin maju). REJ paling bawah.
-const JA_PROGRESS_ORDER={'Accepted':6,'Offer':5,'Adv. User':4,'Adv. Partner':3,'Adv. Dokumen':2,'Submitted':1,'Rejected':0};
+// Urutan progress job apply — dipakai nanti saat versi riwayat penuh (multi-card) diaktifkan kembali.
+// const JA_PROGRESS_ORDER={'Accepted':6,'Offer':5,'Adv. User':4,'Adv. Partner':3,'Adv. Dokumen':2,'Submitted':1,'Rejected':0};
 
 let allData=[],myStudent=null,prog='aus',exam='overall',showAll=false;
 
@@ -315,12 +315,18 @@ async function fetchStudentJourneyLookup(){
       const entry={};
       const pct=parseFloat(r.pct_kehadiran);
       if(!isNaN(pct)) entry.pct_kehadiran=pct;
+      // Kolom job apply versi sementara (ringkasan 1 baris, bukan riwayat lengkap)
+      // TODO: ganti ke riwayat_status/riwayat_next_step/riwayat_job_role/riwayat_location/riwayat_project_start
+      // begitu mart_acops_waa_job_apply selesai direvisi ke versi riwayat per-field.
       entry.jumlahJobApply = parseInt(r.jumlah_job_apply)||0;
-      entry.riwayatStatus = splitPipe(r.riwayat_status);
-      entry.riwayatNextStep = splitPipe(r.riwayat_next_step);
-      entry.riwayatJobRole = splitPipe(r.riwayat_job_role);
-      entry.riwayatLocation = splitPipe(r.riwayat_location);
-      entry.riwayatProjectStart = splitPipe(r.riwayat_project_start);
+      entry.statusTerbaik = (r.status_job_apply_terbaik||'').trim();
+      entry.nextStepTerbaik = (r.next_step_terbaik||'').trim();
+      entry.jobRoleTerbaik = (r.job_role_terbaik||'').trim();
+      entry.locationTerbaik = (r.location_terbaik||'').trim();
+      entry.jumlahAccepted = parseInt(r.jumlah_job_accepted)||0;
+      entry.jumlahOffer = parseInt(r.jumlah_job_offer)||0;
+      entry.jumlahRejected = parseInt(r.jumlah_job_rejected)||0;
+      entry.detailHistory = (r.detail_job_apply_history||'').trim();
       lookup[code]=entry;
       matched++;
     });
@@ -397,11 +403,14 @@ async function getDataCached(){
     if(!entry) return;
     if(entry.pct_kehadiran!==undefined) r.avg_hadir=entry.pct_kehadiran;
     r.jumlahJobApply=entry.jumlahJobApply||0;
-    r.riwayatStatus=entry.riwayatStatus||[];
-    r.riwayatNextStep=entry.riwayatNextStep||[];
-    r.riwayatJobRole=entry.riwayatJobRole||[];
-    r.riwayatLocation=entry.riwayatLocation||[];
-    r.riwayatProjectStart=entry.riwayatProjectStart||[];
+    r.statusTerbaik=entry.statusTerbaik||'';
+    r.nextStepTerbaik=entry.nextStepTerbaik||'';
+    r.jobRoleTerbaik=entry.jobRoleTerbaik||'';
+    r.locationTerbaik=entry.locationTerbaik||'';
+    r.jumlahAccepted=entry.jumlahAccepted||0;
+    r.jumlahOffer=entry.jumlahOffer||0;
+    r.jumlahRejected=entry.jumlahRejected||0;
+    r.detailHistory=entry.detailHistory||'';
     joined++;
   });
   console.log('[debug-sj] berhasil join:',joined,'dari',arr.length,'student');
@@ -571,24 +580,9 @@ function renderHeroRank(myRanked,myScore,myRank,total){
     '</div>';
 }
 
-/* ── Job Apply ── */
-
-// Gabungkan kolom riwayat (pipe-delimited, sejajar index) jadi array of objects, lalu sort by progress
-function getJobApplyList(r){
-  const n=r.jumlahJobApply||0;
-  if(!n) return [];
-  const list=[];
-  for(let i=0;i<n;i++){
-    list.push({
-      status: r.riwayatStatus?.[i]||'-',
-      nextStep: r.riwayatNextStep?.[i]||null,
-      jobRole: r.riwayatJobRole?.[i]||'-',
-      location: r.riwayatLocation?.[i]||'-',
-      projectStart: r.riwayatProjectStart?.[i]||'-'
-    });
-  }
-  return list.sort((a,b)=>(JA_PROGRESS_ORDER[b.status]??-1)-(JA_PROGRESS_ORDER[a.status]??-1));
-}
+/* ── Job Apply (versi sementara: pakai kolom ringkasan _terbaik) ── */
+// TODO: ganti ke versi riwayat penuh (multi-card, sort by progress) begitu
+// mart_acops_waa_job_apply selesai direvisi ke kolom riwayat_status dkk.
 
 function jaStatusClass(status){
   if(status==='Accepted') return 'st-acc';
@@ -599,33 +593,42 @@ function jaStatusClass(status){
 function renderJobApply(){
   const wrap=document.getElementById('jaWrap');
   if(!myStudent){wrap.innerHTML='';return;}
-  const list=getJobApplyList(myStudent);
+  const jumlah=myStudent.jumlahJobApply||0;
 
-  if(!list.length){
+  if(!jumlah){
     wrap.innerHTML='<div class="sec-head"><span class="sec-title">Progress Job Apply</span></div>'+
       '<div class="ja-empty">Belum ada riwayat job apply yang tercatat.</div>';
     return;
   }
 
-  const cards=list.map(j=>{
-    const cls=jaStatusClass(j.status);
-    return '<div class="ja-card '+cls+'">'+
-      '<div class="ja-top">'+
-        '<div>'+
-          '<div class="ja-role">'+j.jobRole+'</div>'+
-          '<div class="ja-loc">'+j.location+'</div>'+
-        '</div>'+
-        '<span class="ja-badge '+cls+'">'+j.status+'</span>'+
-      '</div>'+
-      '<div class="ja-meta">'+
-        (j.projectStart && j.projectStart!=='-'?'<span><b>Mulai:</b> '+j.projectStart+'</span>':'')+
-      '</div>'+
-      (j.nextStep?'<div class="ja-next">Next step: '+j.nextStep+'</div>':'')+
-      '</div>';
-  }).join('');
+  const status=myStudent.statusTerbaik||'-';
+  const cls=jaStatusClass(status);
+  const role=myStudent.jobRoleTerbaik||'-';
+  const loc=myStudent.locationTerbaik||'-';
+  const next=myStudent.nextStepTerbaik;
+  const acc=myStudent.jumlahAccepted||0;
+  const off=myStudent.jumlahOffer||0;
+  const rej=myStudent.jumlahRejected||0;
 
-  wrap.innerHTML='<div class="sec-head"><span class="sec-title">Progress Job Apply</span><span class="sec-sub">'+list.length+' riwayat</span></div>'+
-    '<div class="ja-list">'+cards+'</div>';
+  const card='<div class="ja-card '+cls+'">'+
+    '<div class="ja-top">'+
+      '<div>'+
+        '<div class="ja-role">'+role+'</div>'+
+        '<div class="ja-loc">'+loc+'</div>'+
+      '</div>'+
+      '<span class="ja-badge '+cls+'">'+status+'</span>'+
+    '</div>'+
+    '<div class="ja-meta">'+
+      '<span><b>Total apply:</b> '+jumlah+'</span>'+
+      (acc>0?'<span><b>Accepted:</b> '+acc+'</span>':'')+
+      (off>0?'<span><b>Offer:</b> '+off+'</span>':'')+
+      (rej>0?'<span><b>Rejected:</b> '+rej+'</span>':'')+
+    '</div>'+
+    (next?'<div class="ja-next">Next step: '+next+'</div>':'')+
+    '</div>';
+
+  wrap.innerHTML='<div class="sec-head"><span class="sec-title">Progress Job Apply</span><span class="sec-sub">status terbaik dari '+jumlah+' kali apply</span></div>'+
+    '<div class="ja-list">'+card+'</div>';
 }
 </script>
 </body>
