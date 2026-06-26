@@ -429,9 +429,20 @@ async function getDataCached(){
 function showDash(){
   document.getElementById('loginWrap').style.display='none';
   document.getElementById('dashWrap').style.display='block';
-  document.getElementById('heroBatch').textContent=myStudent.batch||'';
-  updateTabs();
-  render();
+  const hasBatch=!!(myStudent.batch && myStudent.batch.trim());
+  document.getElementById('heroBatch').textContent=hasBatch?myStudent.batch:'';
+
+  if(!hasBatch){
+    // Student tanpa batch (belum terdaftar di tracker batch tertentu):
+    // tidak ada konteks untuk ranking/leaderboard, jadi tampilkan skor & kehadiran
+    // pribadi saja, sembunyikan elemen leaderboard (Top 3, tabel ranking, dst).
+    document.querySelector('.selbar').style.display='none';
+    renderPersonalOnly();
+  }else{
+    document.querySelector('.selbar').style.display='flex';
+    updateTabs();
+    render();
+  }
   renderJobApply();
 }
 
@@ -478,6 +489,51 @@ function isMe(r){
   const rSid=(r.searching_id||'').toUpperCase();
   if(mySid && rSid && mySid===rSid) return true;
   return r.name===myStudent.name && r.batch===myStudent.batch;
+}
+
+// Mode tanpa batch: tidak ada pembanding untuk ranking, jadi tampilkan
+// skor & kehadiran pribadi langsung untuk semua program yang ada nilainya.
+function renderPersonalOnly(){
+  const card=document.getElementById('myRankCard');
+  const hadir=n(myStudent.avg_hadir);
+  card.innerHTML=
+    '<div class="myrank-right" style="flex:1">'+
+      '<div class="myrank-name">'+(myStudent.name||'&#x2014;')+'</div>'+
+      (hadir>0?'<div class="myrank-hadir">Kehadiran: '+hadir.toFixed(0)+'%</div>':'')+
+    '</div>';
+
+  const ausScores=getSubScores(myStudent,'aus');
+  const tokScores=getSubScores(myStudent,'tok');
+  const sections=[];
+
+  if(ausScores.length){
+    sections.push(personalScoreBlock('Ausbildung','aus',ausScores));
+  }
+  if(tokScores.length){
+    sections.push(personalScoreBlock('Tokutei Ginou','tok',tokScores));
+  }
+
+  if(!sections.length){
+    document.getElementById('main').innerHTML=
+      '<div class="ja-empty">Belum ada data nilai yang tercatat untuk akun ini.</div>';
+    return;
+  }
+
+  document.getElementById('main').innerHTML=sections.join('');
+}
+
+function personalScoreBlock(label,p,scores){
+  const isTok=p==='tok';
+  const fill=isTok?'var(--teal)':'var(--wab)';
+  const overall=computeScore(myStudent,'overall',p);
+  return '<div class="sec-head" style="margin-top:16px"><span class="sec-title">'+label+'</span></div>'+
+    '<div class="lb-wrap" style="padding:14px 16px">'+
+      '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:10px">'+
+        '<span style="font-family:\'Space Mono\',monospace;font-size:28px;font-weight:700;color:'+fill+'">'+overall.toFixed(1)+'</span>'+
+        '<span style="font-size:11px;color:var(--ink3)">overall</span>'+
+      '</div>'+
+      '<div class="chips">'+scores.map(s=>'<span class="chip '+p+'">'+s.label+': '+s.val.toFixed(0)+'</span>').join('')+'</div>'+
+    '</div>';
 }
 
 function render(){
