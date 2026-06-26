@@ -367,6 +367,11 @@ async function doLogin(auto){
     });
     if(!found){showLoginErr('Student WAA ID tidak ditemukan. Pastikan ID sudah benar (contoh: TOKSEKAR123).');document.getElementById('loginBtn').disabled=false;document.getElementById('loginBtn').textContent='Lihat Ranking Saya';return;}
     localStorage.setItem(ID_KEY,inputId);
+    console.log('[debug-login] inputId:', inputId);
+    console.log('[debug-login] found:', JSON.stringify(found));
+    console.log('[debug-login] found.searching_id:', found.searching_id);
+    console.log('[debug-login] found.batch:', found.batch);
+    console.log('[debug-login] found.name:', found.name);
     myStudent=found;
     allData=data;
     const dp=detectProg(found.batch);
@@ -565,7 +570,18 @@ function render(){
 function renderHeroRank(myRanked,myScore,myRank,total){
   const card=document.getElementById('myRankCard');
   if(!myRanked){
-    card.innerHTML='<div class="myrank-no-data">Belum ada data nilai untuk ujian ini &mdash; pilih ujian lain atau tunggu hasil keluar.</div>';
+    const dbgScore=computeScore(myStudent,exam,prog);
+    card.innerHTML='<div class="myrank-no-data">Belum ada data nilai untuk ujian ini &mdash; pilih ujian lain atau tunggu hasil keluar.'+
+      '<div style="margin-top:8px;padding:8px;background:rgba(0,0,0,0.2);border-radius:8px;font-family:monospace;font-size:10px;text-align:left;white-space:pre-wrap;">'+
+      'DEBUG\n'+
+      'myStudent.searching_id: '+(myStudent.searching_id||'(kosong)')+'\n'+
+      'myStudent.batch: '+(myStudent.batch||'(kosong)')+'\n'+
+      'myStudent.name: '+(myStudent.name||'(kosong)')+'\n'+
+      'score utk exam ini: '+dbgScore+'\n'+
+      'jumlah student lain yg PUNYA nilai (scored): '+total+'\n'+
+      'exam aktif: '+exam+' | prog: '+prog+
+      '</div>'+
+      '</div>';
     return;
   }
   const hadir=n(myRanked.avg_hadir);
